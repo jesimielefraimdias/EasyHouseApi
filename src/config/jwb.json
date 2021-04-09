@@ -1,0 +1,5 @@
+{
+    "key" : "desenvolvimento",
+    "emailKey": "desenvolvimento_validar_email",
+    "forgotKey": "desenvolvimento_esqueci_minha_senha"
+}
