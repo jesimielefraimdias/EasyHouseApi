@@ -458,7 +458,7 @@ module.exports = {
                 .select(
                     "user_information.user_id", "evaluation_id",
                     "cpf", "email",
-                    "access_level", "validated_email", 
+                    "access_level", "validated_email",
                     "viewed", "title");
 
             const totalCount = await model.clone().count();

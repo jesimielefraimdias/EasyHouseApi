@@ -18,23 +18,25 @@ module.exports = {
         try {
             const { email = null, password = null, tokenId = null } = req.body;
 
-            const res = await getUserFromTokenIdGoogle(tokenId);
-            console.log(res);
-            return;
+            // const resGoogle = await getUserFromTokenIdGoogle(tokenId);
+            // console.log(resGoogle);
+            // return res.end();
 
             if (!emailIsValid(email) || !passwordIsValid(password)) {
                 const error = new Error("Violação nas validações");
                 error.status = 400;
 
                 throw error;
-                return;
             }
 
             const user = await knex("user_information").where({ email })
                 .select("user_id", "name", "cpf", "email", "password",
-                    "removed", "access_level", "validated", "validated_email");
+                    "removed", "access_level", "validated", "validated_email").first();
 
-            if (user.length === 0) {
+            console.log(user);
+            if (!!user) {
+
+                const resGoogle = await getUserFromTokenIdGoogle(tokenId);
 
                 const errorMsg = {
                     errorLogin: "Verifique os dados e tente novamente."
@@ -44,9 +46,8 @@ module.exports = {
                 error.status = 401;
 
                 throw error;
-                return;
 
-            } else if (user[0].removed || !user[0].validated_email) {
+            } else if (user.removed || !user.validated_email) {
 
                 const errorMsg = {
                     errorLogin: "Você não tem acesso!"
@@ -56,9 +57,8 @@ module.exports = {
                 error.status = 401;
 
                 throw error;
-                return;
 
-            } else if (!bcrypt.compareSync(password, user[0].password)) {
+            } else if (!bcrypt.compareSync(password, user.password)) {
                 const errorMsg = {
                     errorLogin: "Verifique os dados e tente novamente!"
                 };
@@ -66,11 +66,10 @@ module.exports = {
                 const error = new Error(JSON.stringify(errorMsg));
                 error.status = 401;
                 throw error;
-                return;
 
             }
 
-            const token = jwt.sign({ user_id: user[0].user_id, email: user[0].email }
+            const token = jwt.sign({ user_id: user.user_id, email: user.email }
                 , key, {
                 expiresIn: "1h"
             });
