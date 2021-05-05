@@ -16,28 +16,54 @@ module.exports = {
     async loginDashboard(req, res, next) {
 
         try {
-            const { email = null, password = null, tokenId = null } = req.body;
+            let { email = null, password = null, tokenId = null } = req.body;
+            let resGoogle = null, name = null, user_id = null;
 
-            // const resGoogle = await getUserFromTokenIdGoogle(tokenId);
-            // console.log(resGoogle);
-            // return res.end();
+            console.log(email, password, !!tokenId);
+            if (tokenId === null && (!emailIsValid(email) || !passwordIsValid(password))) {
 
-            if (!emailIsValid(email) || !passwordIsValid(password)) {
                 const error = new Error("Violação nas validações");
                 error.status = 400;
 
                 throw error;
             }
 
-            const user = await knex("user_information").where({ email })
+
+            if (tokenId !== null) {
+                resGoogle = await getUserFromTokenIdGoogle(tokenId);
+
+                if (!!!resGoogle) {
+                    const errorMsg = {
+                        errorLogin: "Login com google inválido"
+                    };
+
+                    const error = new Error(JSON.stringify(errorMsg));
+                    error.status = 401;
+
+                    throw error;
+                } else {
+                    email = resGoogle.email;
+                    name = resGoogle.name;
+                }
+            }
+
+            const user = await knex("user_information")
+                .where({ email })
                 .select("user_id", "name", "cpf", "email", "password",
-                    "removed", "access_level", "validated", "validated_email").first();
+                    "removed", "access_level", "validated", "validated_email")
+                .first();
 
-            console.log(user);
-            if (!!user) {
-
-                const resGoogle = await getUserFromTokenIdGoogle(tokenId);
-
+            if (!!tokenId && !!!user) {
+                user_id = await knex("user_information")
+                    .returning("user_id")
+                    .insert({
+                        name,
+                        email,
+                        cpf: null,
+                        password: null,
+                        validated_email: true
+                    });
+            } else if (!!!user) {
                 const errorMsg = {
                     errorLogin: "Verifique os dados e tente novamente."
                 };
@@ -58,7 +84,7 @@ module.exports = {
 
                 throw error;
 
-            } else if (!bcrypt.compareSync(password, user.password)) {
+            } else if (!!tokenId && !!!user || !!!tokenId && !bcrypt.compareSync(password, user.password)) {
                 const errorMsg = {
                     errorLogin: "Verifique os dados e tente novamente!"
                 };
@@ -69,13 +95,15 @@ module.exports = {
 
             }
 
-            const token = jwt.sign({ user_id: user.user_id, email: user.email }
+            const token = jwt.sign({
+                user_id: !!user ? user.user_id : user_id,
+                email: !!user ? user.email : email,
+            }
                 , key, {
                 expiresIn: "1h"
             });
 
             res.cookie("token", token, {
-                // maxAge: new Date(Date.now() + 90000000),
                 secure: false, //Falso para http true para https
                 httpOnly: true
             });

@@ -34,7 +34,7 @@ module.exports = {
                 error.status = 400;
 
                 throw error;
-                return;
+                
             }
 
             const resultEmail = await knex("user_information").where({ email });

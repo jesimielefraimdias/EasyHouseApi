@@ -35,13 +35,17 @@ exports.getUserFromToken = async (req) => {
 exports.getUserFromTokenIdGoogle = async (object) => {
 
     console.log(object.qc.id_token);
-    
-    const ticket = await client.verifyIdToken({
-        idToken: object.qc.id_token,
-        audience: clientId
-    });
+    try {
 
-    const payload = ticket.getPayload();
+        const ticket = await client.verifyIdToken({
+            idToken: object.qc.id_token,
+            audience: clientId
+        });
 
-    return payload;
+        const payload = ticket.getPayload();
+
+        return payload;
+    } catch (e) {
+        return null;
+    }
 }
