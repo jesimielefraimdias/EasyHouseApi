@@ -23,6 +23,7 @@
     "express-session": "^1.17.1",
     "fs": "^0.0.1-security",
     "google-auth-library": "^7.0.4",
+    "googleapis": "^73.0.0",
     "intl": "^1.2.5",
     "jsonwebtoken": "^8.5.1",
     "knex": "^0.21.2",

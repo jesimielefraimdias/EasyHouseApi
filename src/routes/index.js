@@ -2,12 +2,11 @@ const express = require("express");
 const multer = require("multer");
 const multerConfig = require("../config/multer");
 
-const path = require("path");
-const fs = require("fs");
 const routes = express.Router();
 
 const UserController = require("../app/controllers/UserController");
 const AdministratorController = require("../app/controllers/AdministratorController");
+const PropertyController = require("../app/controllers/PropertyController");
 const AuthenticationController = require("../app/controllers/AuthenticationController");
 const AuthenticatedOnly = require("../app/middleware/AuthenticatedOnly");
 
@@ -20,6 +19,7 @@ routes.get("/resetPassword/:token", AuthenticationController.resetPassword);
 routes.get("/changeEmail/:token", AuthenticationController.changeEmail);
 
 routes.post("/createUser", UserController.create);
+routes.post("/createProperty", AuthenticatedOnly.userAccessLevel, PropertyController.create);
 routes.post("/createAdministratorLevel", AuthenticatedOnly.administratorAccessLevel, AdministratorController.create);
 routes.post("/createEvaluation", AuthenticatedOnly.userAccessLevel, UserController.createEvaluation);
 
@@ -37,5 +37,7 @@ routes.post("/isLogged", AuthenticatedOnly.accessLevel, UserController.logged);
 routes.post("/isLoggedUserLevel", AuthenticatedOnly.userAccessLevel, UserController.logged);
 routes.post("/isLoggedAdministratorLevel", AuthenticatedOnly.administratorAccessLevel, AdministratorController.logged);
 routes.post("/isLoggedDashBoard", AuthenticatedOnly.administratorAccessLevel, AdministratorController.logged);
+routes.get("/listFiles", PropertyController.listFiles);
+routes.post("/testUpdate", multer(multerConfig).single("document"), PropertyController.test);
 
 module.exports = routes;

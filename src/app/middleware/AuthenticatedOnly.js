@@ -98,6 +98,7 @@ module.exports = {
             }
 
             res.locals.accessLevel = user[0].access_level;
+            res.locals.ac = user[0].access_level;
 
             next();
 

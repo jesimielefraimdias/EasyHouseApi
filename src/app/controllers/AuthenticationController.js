@@ -17,7 +17,7 @@ module.exports = {
 
         try {
             let { email = null, password = null, tokenId = null } = req.body;
-            let resGoogle = null, name = null, user_id = null;
+            let resGoogle = null, name = null, id = null;
 
             console.log(email, password, !!tokenId);
             if (tokenId === null && (!emailIsValid(email) || !passwordIsValid(password))) {
@@ -49,13 +49,13 @@ module.exports = {
 
             const user = await knex("user_information")
                 .where({ email })
-                .select("user_id", "name", "cpf", "email", "password",
+                .select("id", "name", "cpf", "email", "password",
                     "removed", "access_level", "validated", "validated_email")
                 .first();
 
             if (!!tokenId && !!!user) {
-                user_id = await knex("user_information")
-                    .returning("user_id")
+                id = await knex("user_information")
+                    .returning("id")
                     .insert({
                         name,
                         email,
@@ -96,7 +96,7 @@ module.exports = {
             }
 
             const token = jwt.sign({
-                user_id: !!user ? user.user_id : user_id,
+                id: !!user ? user.id : id,
                 email: !!user ? user.email : email,
             }
                 , key, {
@@ -131,7 +131,7 @@ module.exports = {
             const { email } = req.body;
 
             const user = await knex("user_information").where({ email })
-                .select("user_id", "email", "name");
+                .select("id", "email", "name");
 
             if (user.length == 0) {
                 throw new Error("Email não existe");
@@ -140,13 +140,13 @@ module.exports = {
 
             const code = crypto.randomBytes(2).toString("hex");
 
-            const token = jwt.sign({ user_id: user[0].user_id, code }
+            const token = jwt.sign({ id: user[0].id, code }
                 , forgotKey, {
                 expiresIn: "10m"
             });
 
             await knex('user_information')
-                .where({ user_id: user[0].user_id })
+                .where({ id: user[0].id })
                 .update({ code });
 
             mailer.sendMail({
@@ -178,14 +178,14 @@ module.exports = {
         try {
 
             const { token } = req.params;
-            let user_id, code = null, error_token = false;
+            let id, code = null, error_token = false;
 
             jwt.verify(token, forgotKey,
                 function (error, decode) {
                     if (error) {
                         error_token = true;
                     } else {
-                        user_id = decode.user_id;
+                        id = decode.id;
                         code = decode.code;
                     }
                 }
@@ -202,7 +202,7 @@ module.exports = {
             const newPassword = crypto.randomBytes(4).toString("hex");
 
             const user = await knex("user_information")
-                .where({ user_id })
+                .where({ id })
                 .select("email", "name", "code");
 
             if (error_token || user[0].code != code) {
@@ -218,7 +218,7 @@ module.exports = {
             }
 
             await knex('user_information')
-                .where({ user_id })
+                .where({ id })
                 .update({ code: null });
 
 
@@ -233,10 +233,10 @@ module.exports = {
                         return;
                     }
 
-                    await knex("user_information").where({ user_id })
+                    await knex("user_information").where({ id })
                         .update({ password: hash })
 
-                    const user = await knex("user_information").where({ user_id })
+                    const user = await knex("user_information").where({ id })
                         .select("email", "name");
 
 
@@ -278,7 +278,7 @@ module.exports = {
         try {
 
             const { token } = req.params;
-            let user_id = null, email = null, errorToken = false;
+            let id = null, email = null, errorToken = false;
 
             jwt.verify(token, emailKey,
                 function (error, decode) {
@@ -286,7 +286,7 @@ module.exports = {
                         errorToken = true;
                     }
 
-                    user_id = decode.user_id;
+                    id = decode.id;
                     email = decode.email;
                 }
             );
@@ -300,7 +300,7 @@ module.exports = {
             }
 
             const user = await knex("user_information")
-                .where({ user_id });
+                .where({ id });
 
             if (user[0].email !== email) {
 
@@ -325,11 +325,11 @@ module.exports = {
                 //Removendo os demais usuários que tem o mesmo email, porém não estão ativados.
                 await knex("user_information")
                     .where({ email })
-                    .where("user_id", "!=", user_id)
+                    .where("id", "!=", id)
                     .del();
 
                 await knex('user_information')
-                    .where({ user_id })
+                    .where({ id })
                     .update({ email, code: null });
             }
 
@@ -379,7 +379,7 @@ module.exports = {
             //Usuário com id em questão.
             const user = await knex("user_information")
                 .where({ email })
-                .select("user_id", "email", "validated_email");
+                .select("id", "email", "validated_email");
 
             //Todos os usuários com este email.
             const resultEmail = await knex("user_information")
@@ -417,7 +417,7 @@ module.exports = {
             if (deleteAccount) {
                 //Removendo conta que tem código expirado!
                 await knex("user_information")
-                    .where({ user_id: user[0].user_id })
+                    .where({ id: user[0].id })
                     .del();
             }
 
@@ -434,13 +434,13 @@ module.exports = {
 
             if (validated_email) {
                 await knex('user_information')
-                    .where({ user_id: user[0].user_id })
+                    .where({ id: user[0].id })
                     .update({ validated_email: true });
 
                 //Removendo os demais usuários que tem o mesmo email, porém não estão ativados.
                 await knex("user_information")
                     .where({ email: email })
-                    .where("user_id", "!=", user[0].user_id)
+                    .where("id", "!=", user[0].id)
                     .del();
             }
 

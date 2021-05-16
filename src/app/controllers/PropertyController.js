@@ -2,11 +2,30 @@ const knex = require("../../database");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const mailer = require("../../services/mailer");
+const path = require("path");
+const fs = require("fs");
 const { environment } = require("../../config/environment");
 const { key, emailKey } = require("../../config/jwb.json");
-
+const { google } = require("googleapis");
 const { getUserFromToken } = require("../helpers/userToken");
-const { titleIsValid, evaluationIsValid } = require("../helpers/propertyValidation");
+const credentials = require("../../config/googleCredentials.json");
+const scopes = [
+    'https://www.googleapis.com/auth/drive'
+];
+const auth = new google.auth.JWT(
+    credentials.client_email, null,
+    credentials.private_key, scopes
+);
+const drive = google.drive({ version: "v3", auth });
+
+const {
+    isStringValid255,
+    isStringValid500,
+    cepIsValid,
+    isQuantityValid,
+    isContractValid,
+    isValueValid
+} = require("../helpers/propertyValidation");
 
 const {
     nameIsValid,
@@ -23,107 +42,128 @@ module.exports = {
     async create(req, res, next) {
 
         try {
-            const { name, email, cpf = null, password = null } = req.body;
-
+            const {
+                nickname, //255
+                address, //255
+                complement, //255
+                district, //255
+                description, //500
+                number, //QuantityValid -- 
+                room, //QuantityValid --
+                restroom, //QuantityValid --
+                contract, //isContractValid
+                rentAmount, //isValueValid
+                propertyValue, //isValueValid
+                cep, //cepIsValid
+            } = req.body;
+            console.log(req.body);
             //Verificando se os dados são validos.
-            if (!nameIsValid(name) || !emailIsValid(email) ||
-                !cpfIsValid(cpf) || !passwordIsValid(password)) {
-
-                console.log(name, email, cpf, password);
+            if (
+                !isStringValid255(nickname) ||
+                !isStringValid255(address) ||
+                !isStringValid255(complement) ||
+                !isStringValid255(district) ||
+                !isStringValid500(description) ||
+                !isQuantityValid(number) ||
+                !isQuantityValid(room) ||
+                !isQuantityValid(restroom) ||
+                !isContractValid(contract) ||
+                !isValueValid(rentAmount) ||
+                !isValueValid(propertyValue) ||
+                !await cepIsValid(cep)
+            ) {
                 const error = new Error("Violação nas validações");
                 error.status = 400;
 
                 throw error;
-                
             }
 
-            const resultEmail = await knex("user_information").where({ email });
-            const resultCpf = await knex("user_information").where({ cpf });
 
-            let errorMsg = { error: false, errorEmail: "", errorCpf: "" };
-
-            //Verificando se email ou cpf já estão em uso definitivo.
-            if (emailInUse(resultEmail)) {
-                // console.log("entrou?");
-                errorMsg.errorEmail = "Email já cadastrado!";
-                errorMsg.error = true;
-            }
-
-            if (cpfInUse(resultCpf)) {
-                errorMsg.errorCpf = "Cpf já cadastrado!";
-                errorMsg.error = true;
-            }
-
-            if (errorMsg.error) {
-                const error = new Error(JSON.stringify(errorMsg));
-                error.status = 200;
-
-                throw error;
-            }
-
-            //Criando hash.
-            bcrypt.genSalt(10, function (err, salt) {
-                bcrypt.hash(password, salt, async function (err, hash) {
-
-                    if (err) {
-
-                        const error = new Error(JSON.stringify(
-                            {
-                                errorPassword: "Senha inválida"
-                            }
-                        ));
-                        error.status = 200;
-
-                        throw error;
-                    }
-
-                    await knex("user_information")
-                        .where({ email })
-                        .del();
-
-                    await knex("user_information").insert({
-                        name,
-                        email,
-                        cpf,
-                        password: hash
-                    });
-                });
+            const user = await getUserFromToken(req);
+            console.log(user[0].id);
+            await knex("property").insert({
+                user_id: user[0].id,
+                nickname, //255
+                address, //255
+                complement, //255
+                district, //255
+                description, //500
+                number, //QuantityValid -- 
+                room, //QuantityValid --
+                restroom, //QuantityValid --
+                contract, //isContractValid
+                rent_amount: rentAmount * 100, //isValueValid
+                property_value: propertyValue * 100, //isValueValid
+                cep, //cepIsValid
             });
 
-            const token = jwt.sign({ email }
-                , emailKey, {
-                expiresIn: "30m"
-            });
 
-            // console.log(environment.email);
-
-            mailer.sendMail({
-                from: environment.email.auth.user, // sender address
-                to: email, // list of receivers
-                subject: "Ativar conta", // Subject line
-                template: "validateAccount", // Subject line
-                context: {
-                    time: "30 minutos",
-                    name,
-                    link: `${environment.ipAdress}/activateAccount/${token}`
-                }
-            }, errorMessage => {
-                const error = new Error(errorMessage);
-                error.status = 400;
-
-                throw error;
-            });
-
+            console.log("passou");
             return res.status(201).send();
 
         } catch (error) {
+            next(error);
+        }
+    },
 
-            if (error.status == 200) {
-                res.status(error.status).send(error.message);
+    async listFiles(req, res, next) {
+        await drive.files.list({}, (err, res) => {
+            if (err) throw err;
+            const files = res.data.files;
+            if (files.length) {
+                files.map((file) => {
+                    console.log(file);
+                });
+            } else {
+                console.log('No files found');
             }
-            else {
-                next(error);
+        });
+
+        res.status(200).end();
+    },
+
+    async test(req, res, next) {
+        try {
+
+            //Cria um diretório teste
+            const newDirectory = path.resolve(__dirname, "..", "..", "..", "uploads", `teste`);
+            //Solicita o caminho do arquivo
+            const filePath = req.file.path;
+            //Cria um nome
+            const newName = path.resolve(__dirname, "..", "..", "..", "uploads", `teste`, `teste.pdf`);
+            //Verifica se o arquivo já existe
+            if (!fs.existsSync(newDirectory)) {
+                //Se não existe, cria.
+                fs.mkdir(newDirectory, (err) => {
+                    if (err) {
+                        throw err;
+                    } else {
+
+                        fs.rename(
+                            filePath,
+                            newName,
+                            err => { if (err) throw err; }
+                        );
+
+                    }
+                });
+            } else {
+                //Se existe, recria
+                fs.rename(
+                    filePath,
+                    newName,
+                    err => {
+                        if (err) {
+                            throw err;
+                        }
+                    }
+                );
             }
+
+
+            res.status(201).end();
+        } catch (error) {
+            next(error);
         }
     },
 
@@ -239,7 +279,6 @@ module.exports = {
                             error.status = 400;
 
                             throw error;
-                            return;
                         }
 
                         await knex('user_information')
@@ -273,7 +312,6 @@ module.exports = {
                     error.status = 400;
 
                     throw error;
-                    return;
                 });
             }
 
@@ -391,82 +429,4 @@ module.exports = {
         }
 
     },
-
-    async createEvaluation(req, res, next) {
-        try {
-            const { title, evaluation } = req.body;
-            const user = await getUserFromToken(req);
-
-            if (!titleIsValid(title) || !evaluationIsValid(evaluation)) {
-                throw new Error("Violação nas validações");
-            }
-
-            await knex("evaluation_information")
-                .insert({
-                    id: user[0].id,
-                    title,
-                    evaluation
-                })
-
-            res.status(201).end();
-
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    async getEvaluations(req, res, next) {
-        try {
-
-            const { filters = null, page = 0, pageSize } = req.query;
-
-            const { token } = req.cookies;
-
-            let query = knex("evaluation_information")
-                .leftJoin("user_information", "user_information.id", "evaluation_information.id")
-
-            if (filters !== null) {
-
-                //Aplicando os filtros.
-                filters.forEach((elementJson) => {
-                    const element = JSON.parse(elementJson);
-                    //Caso seja uma string usaremos o ilike!
-                    if (element.field === "title" ||
-                        element.field === "cpf" ||
-                        element.field === "email") {
-
-                        query.andWhere(element.field, "like", `%${element.value}%`);
-
-                    } else if (element.field === "viewed" && element.value.length !== 2) {
-                        if (element.value.length === 1) {
-                            query.andWhere(element.field, element.value[0]);
-                        }
-                    }
-                });
-            }
-
-            let model = query;
-            const users = await model
-                .clone()
-                .orderBy("id")
-                .limit(pageSize)
-                .offset(page * pageSize)
-                .select(
-                    "user_information.id", "evaluation_id",
-                    "cpf", "email",
-                    "access_level", "validated_email",
-                    "viewed", "title");
-
-            const totalCount = await model.clone().count();
-
-            res.status(200).send({ users, totalCount: totalCount[0]["count(*)"] });
-
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    logged(req, res, next) {
-        res.status(200).json({ accessLevel: res.locals.accessLevel });
-    }
 }

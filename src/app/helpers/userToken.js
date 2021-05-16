@@ -23,10 +23,10 @@ exports.getUserFromToken = async (req) => {
     }
 
 
-    const { user_id } = jwt.verify(token, key);
+    const { id } = jwt.verify(token, key);
 
     user = await knex("user_information")
-        .where({ user_id });
+        .where({ id });
 
     return user;
 

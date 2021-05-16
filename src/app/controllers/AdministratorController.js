@@ -124,7 +124,7 @@ module.exports = {
 
         try {
 
-            const { user_id } = req.body;
+            const { id } = req.body;
             const changeUser = req.body;
 
             let errorMsg = {
@@ -133,7 +133,7 @@ module.exports = {
             };
 
             //Pegando os dados do usuário.
-            const user = await knex("user_information").where({ user_id });
+            const user = await knex("user_information").where({ id });
 
             const changeEmail = changeUser.email !== user[0].email ? true : false;
 
@@ -153,7 +153,7 @@ module.exports = {
                 //Verificando se o email a ser alterado existe.
                 const resultEmail = await knex("user_information")
                     .where({ email: changeUser.email })
-                    .select("user_id");
+                    .select("id");
 
                 //Verificando se o email pertence a outro usuário.
                 if (emailInUse(resultEmail)) {
@@ -164,7 +164,7 @@ module.exports = {
 
             if (changeEmail && !errorMsg.error) {
 
-                const token = jwt.sign({ user_id, email: changeUser.email }
+                const token = jwt.sign({ id, email: changeUser.email }
                     , emailKey, {
                     expiresIn: "30m"
                 });
@@ -191,7 +191,7 @@ module.exports = {
             if (!errorMsg.error) {
 
                 knex('user_information')
-                    .where({ user_id })
+                    .where({ id })
                     .update({
                         access_level: changeUser.access_level,
                         validated: changeUser.validated === "true" ? 1 : 0,
@@ -222,10 +222,10 @@ module.exports = {
             const { filters = null, page = 0, pageSize } = req.query;
 
             const { token } = req.cookies;
-            const { user_id } = jwt.verify(token, key);
+            const { id } = jwt.verify(token, key);
 
             let query = knex("user_information")
-                .whereNot({ user_id });
+                .whereNot({ id });
 
             //Se for diferente de null aplicamos os filtros.
             if (filters !== null) {
@@ -259,10 +259,10 @@ module.exports = {
             let model = query;
             const users = await model
                 .clone()
-                .orderBy("user_id")
+                .orderBy("id")
                 .limit(pageSize)
                 .offset(page * pageSize)
-                .select("user_id", "name", "cpf", "email", "access_level", "validated_email");
+                .select("id", "name", "cpf", "email", "access_level", "validated_email");
 
             const totalCount = await model.clone().count();
 
@@ -277,10 +277,10 @@ module.exports = {
 
         try {
 
-            const { user_id } = req.query;
+            const { id } = req.query;
 
             const user = await knex("user_information")
-                .where({ user_id })
+                .where({ id })
                 .select("access_level", "name", "email", "cpf", "validated", "removed");
 
             res.status(200).json({
