@@ -2,12 +2,12 @@ const knex = require("../../database");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const mailer = require("../../services/mailer");
+const { environment } = require("../../config/environment");
+const { emailKey } = require("../../config/jwb.json");
 const path = require("path");
 const fs = require("fs");
-const { environment } = require("../../config/environment");
-const { key, emailKey } = require("../../config/jwb.json");
-const { google } = require("googleapis");
 const { getUserFromToken } = require("../helpers/userToken");
+const { google } = require("googleapis");
 const credentials = require("../../config/googleCredentials.json");
 const scopes = [
     'https://www.googleapis.com/auth/drive'
@@ -107,7 +107,9 @@ module.exports = {
     },
 
     async listFiles(req, res, next) {
-        await drive.files.list({}, (err, res) => {
+        drive.files.list({
+            q: "mimeType = 'application/vnd.google-apps.folder'"
+        }, (err, res) => {
             if (err) throw err;
             const files = res.data.files;
             if (files.length) {
@@ -117,6 +119,7 @@ module.exports = {
             } else {
                 console.log('No files found');
             }
+
         });
 
         res.status(200).end();
@@ -125,40 +128,31 @@ module.exports = {
     async test(req, res, next) {
         try {
 
-            //Cria um diretório teste
-            const newDirectory = path.resolve(__dirname, "..", "..", "..", "uploads", `teste`);
-            //Solicita o caminho do arquivo
-            const filePath = req.file.path;
-            //Cria um nome
-            const newName = path.resolve(__dirname, "..", "..", "..", "uploads", `teste`, `teste.pdf`);
-            //Verifica se o arquivo já existe
-            if (!fs.existsSync(newDirectory)) {
-                //Se não existe, cria.
-                fs.mkdir(newDirectory, (err) => {
-                    if (err) {
-                        throw err;
-                    } else {
+            const resList = await drive.files.list({
+                q: "mimeType = 'application/vnd.google-apps.folder'"
+            });
+            const foldersIds = resListe .data.files.map(element => element.id);
+            // console.log(resList.data);
 
-                        fs.rename(
-                            filePath,
-                            newName,
-                            err => { if (err) throw err; }
-                        );
+            await req.files.forEach(async (element, index) => {
 
-                    }
+                const resCreate = await drive.files.create({
+                    resource: {
+                        name: element.filename,
+                        parents: foldersIds
+                    },
+                    media: {
+                        mimeType: "application/pdf",
+                        body: fs.createReadStream(path.resolve(element.path))
+                    },
+                    fields: 'id',
                 });
-            } else {
-                //Se existe, recria
-                fs.rename(
-                    filePath,
-                    newName,
-                    err => {
-                        if (err) {
-                            throw err;
-                        }
-                    }
-                );
-            }
+
+                if (fs.existsSync(element.path)) {
+                    fs.unlinkSync(element.path)
+                }
+                console.log(resCreate.status);
+            });
 
 
             res.status(201).end();

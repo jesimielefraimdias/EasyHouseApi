@@ -38,6 +38,6 @@ routes.post("/isLoggedUserLevel", AuthenticatedOnly.userAccessLevel, UserControl
 routes.post("/isLoggedAdministratorLevel", AuthenticatedOnly.administratorAccessLevel, AdministratorController.logged);
 routes.post("/isLoggedDashBoard", AuthenticatedOnly.administratorAccessLevel, AdministratorController.logged);
 routes.get("/listFiles", PropertyController.listFiles);
-routes.post("/testUpdate", multer(multerConfig).single("document"), PropertyController.test);
+routes.post("/testUpdate", multer(multerConfig).array('files', 10), PropertyController.test);
 
 module.exports = routes;
