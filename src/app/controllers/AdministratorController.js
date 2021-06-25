@@ -126,7 +126,7 @@ module.exports = {
 
             const { id } = req.body;
             const changeUser = req.body;
-
+            console.log("aqui", id);
             let errorMsg = {
                 error: false,
                 errorEmail: "",
@@ -139,14 +139,13 @@ module.exports = {
 
             //Validando dados a serem alterados.
             if (!emailIsValid(changeUser.email)
-                || (changeUser.access_level !== "U" && changeUser.access_level !== "O" && changeUser.access_level !== "A")
-                || user[0].validated && !changeUser.validated) {
+                || (changeUser.access_level !== "U" && 
+                changeUser.access_level !== "O" && changeUser.access_level !== "A")) {
 
                 const error = new Error("Violação nas validações");
                 error.status = 400;
 
                 throw error;
-                return;
             }
 
             if (changeEmail) {
@@ -184,7 +183,7 @@ module.exports = {
                     error.status = 400;
 
                     throw error;
-                    return;
+                    
                 });
             }
 
@@ -194,7 +193,6 @@ module.exports = {
                     .where({ id })
                     .update({
                         access_level: changeUser.access_level,
-                        validated: changeUser.validated === "true" ? 1 : 0,
                         removed: changeUser.removed === "true" ? 1 : 0,
                     });
             }
@@ -219,55 +217,12 @@ module.exports = {
     async getUsers(req, res, next) {
         try {
 
-            const { filters = null, page = 0, pageSize } = req.query;
+            let users = await knex("user_information");
+            users = users.map(element => {
+                return ({ ...element, loggedWith: element.password !== null ? "api" : "google" });
+            })
 
-            const { token } = req.cookies;
-            const { id } = jwt.verify(token, key);
-
-            let query = knex("user_information")
-                .whereNot({ id });
-
-            //Se for diferente de null aplicamos os filtros.
-            if (filters !== null) {
-
-                //Aplicando os filtros.
-                filters.forEach((elementJson) => {
-                    const element = JSON.parse(elementJson);
-                    //Caso seja uma string usaremos o ilike!
-                    if (element.field === "name" ||
-                        element.field === "cpf" ||
-                        element.field === "email") {
-
-                        query.andWhere(element.field, "like", `%${element.value}%`);
-
-                    } else if (element.field === "access_level" && element.value.length !== 3) {
-                        if (element.value.length === 1) {
-                            // query.andWhere(element.field, "ilike", element.value[0]);
-                            query.andWhere(element.field, "like", element.value[0]);
-                        } else if (element.value.length === 2) {
-                            query.andWhere(builder => {
-                                // builder.where(element.field, "ilike", element.value[0])
-                                //     .orWhere(element.field, "ilike", element.value[1]);
-                                builder.where(element.field, "like", element.value[0])
-                                    .orWhere(element.field, "like", element.value[1]);
-                            });
-                        }
-                    }
-                });
-            }
-
-            let model = query;
-            const users = await model
-                .clone()
-                .orderBy("id")
-                .limit(pageSize)
-                .offset(page * pageSize)
-                .select("id", "name", "cpf", "email", "access_level", "validated_email");
-
-            const totalCount = await model.clone().count();
-
-            res.status(200).send({ users, totalCount: totalCount[0]["count(*)"] });
-
+            res.status(200).json(users);
         } catch (error) {
             next(error);
         }
@@ -278,17 +233,16 @@ module.exports = {
         try {
 
             const { id } = req.query;
-
+            console.log(id);
             const user = await knex("user_information")
                 .where({ id })
-                .select("access_level", "name", "email", "cpf", "validated", "removed");
+                .select("access_level", "name", "email", "cpf", "removed");
 
             res.status(200).json({
                 access_level: user[0].access_level,
                 name: user[0].name,
                 email: user[0].email,
                 cpf: user[0].cpf,
-                validated: user[0].validated,
                 removed: user[0].removed
             });
 

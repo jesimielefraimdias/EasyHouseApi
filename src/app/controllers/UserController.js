@@ -6,7 +6,6 @@ const { environment } = require("../../config/environment");
 const { key, emailKey } = require("../../config/jwb.json");
 
 const { getUserFromToken } = require("../helpers/userToken");
-const { titleIsValid, evaluationIsValid } = require("../helpers/propertyValidation");
 
 const {
     nameIsValid,
@@ -34,35 +33,22 @@ module.exports = {
                 error.status = 400;
 
                 throw error;
-                
+
             }
 
-            const resultEmail = await knex("user_information").where({ email });
-            const resultCpf = await knex("user_information").where({ cpf });
+            const users = await knex("user_information")
+                .where({ email, validated: true })
+                .orWhere({ cpf }).first();
 
-            let errorMsg = { error: false, errorEmail: "", errorCpf: "" };
-
-            //Verificando se email ou cpf já estão em uso definitivo.
-            if (emailInUse(resultEmail)) {
-                // console.log("entrou?");
-                errorMsg.errorEmail = "Email já cadastrado!";
-                errorMsg.error = true;
-            }
-
-            if (cpfInUse(resultCpf)) {
-                errorMsg.errorCpf = "Cpf já cadastrado!";
-                errorMsg.error = true;
-            }
-
-            if (errorMsg.error) {
-                const error = new Error(JSON.stringify(errorMsg));
-                error.status = 200;
+            if (!!users) {
+                const error = new Error("Violação nas validações");
+                error.status = 400;
 
                 throw error;
             }
 
             //Criando hash.
-            bcrypt.genSalt(10, function (err, salt) {
+            bcrypt.genSalt(10, async function (err, salt) {
                 bcrypt.hash(password, salt, async function (err, hash) {
 
                     if (err) {
@@ -78,43 +64,46 @@ module.exports = {
                     }
 
                     await knex("user_information")
-                        .where({ email })
+                        .where({ email }).orWhere({ cpf })
                         .del();
 
-                    await knex("user_information").insert({
-                        name,
-                        email,
-                        cpf,
-                        password: hash
+                    const [id] = await knex("user_information")
+                        .returning("id")
+                        .insert({
+                            name,
+                            email,
+                            cpf,
+                            password: hash
+                        });
+
+                    const token = jwt.sign({ id, email }
+                        , emailKey, {
+                        expiresIn: "30m"
                     });
+
+                    // console.log(environment.email);
+
+                    mailer.sendMail({
+                        from: environment.email.auth.user, // sender address
+                        to: email, // list of receivers
+                        subject: "Ativar conta", // Subject line
+                        template: "validateAccount", // Subject line
+                        context: {
+                            time: "30 minutos",
+                            name,
+                            link: `${environment.ipAdress}/activateAccount/${token}`
+                        }
+                    }, errorMessage => {
+                        const error = new Error(errorMessage);
+                        error.status = 400;
+
+                        throw error;
+                    });
+
+                    return res.status(201).send();
+
                 });
             });
-
-            const token = jwt.sign({ email }
-                , emailKey, {
-                expiresIn: "30m"
-            });
-
-            // console.log(environment.email);
-
-            mailer.sendMail({
-                from: environment.email.auth.user, // sender address
-                to: email, // list of receivers
-                subject: "Ativar conta", // Subject line
-                template: "validateAccount", // Subject line
-                context: {
-                    time: "30 minutos",
-                    name,
-                    link: `${environment.ipAdress}/activateAccount/${token}`
-                }
-            }, errorMessage => {
-                const error = new Error(errorMessage);
-                error.status = 400;
-
-                throw error;
-            });
-
-            return res.status(201).send();
 
         } catch (error) {
 
@@ -126,7 +115,63 @@ module.exports = {
             }
         }
     },
+    async emailExists(req, res, next) {
+        try {
 
+            const { email } = req.body;
+
+            if (!emailIsValid(email)) {
+                console.log(!emailIsValid(email));
+                const error = new Error("Violação nas validações");
+                error.status = 400;
+
+                throw error;
+            }
+
+            const users = await knex("user_information")
+                .where({ email, validated: true })
+                .first();
+
+            if (!!users) {
+                const error = new Error("Violação nas validações");
+                error.status = 400;
+
+                throw error;
+            }
+
+            return res.end();
+        } catch (error) {
+            next(error);
+        }
+    },
+    async cpfExists(req, res, next) {
+        try {
+            const { cpf } = req.body;
+
+            if (!cpfIsValid(cpf)) {
+                const error = new Error("Violação nas validações");
+                error.status = 400;
+
+                throw error;
+            }
+
+            const users = await knex("user_information")
+                .where({ cpf, validated: true })
+                .first();
+
+            if (!!users) {
+                console.log("teste");
+                const error = new Error("Violação nas validações");
+                error.status = 400;
+
+                throw error;
+            }
+
+            return res.end();
+        } catch (error) {
+            next(error);
+        }
+    },
     async update(req, res, next) {
 
         try {
@@ -136,7 +181,8 @@ module.exports = {
             const user = await getUserFromToken(req);
             const id = user[0].id;
             const changeUser = req.body;
-
+            let newToken = false;
+            console.log(user);
             let errorMsg = {
                 error: false,
                 errorEmail: "",
@@ -149,7 +195,7 @@ module.exports = {
                 //Verificando se devemos mudar ou não a senha.
                 !!changeUser.password ? true : false;
 
-            const changeEmail = changeUser.email !== user[0].email ? true : false;
+            const changeEmail = changeUser.email !== user[0].email && res.locals.user.loggedWith === "api" ? true : false;
 
             //Validando dados a serem alterados.
             if (!nameIsValid(changeUser.name) ||
@@ -171,65 +217,45 @@ module.exports = {
             }
 
             if (changeEmail) {
-
-
                 //Verificando se o email a ser alterado existe.
                 const resultEmail = await knex("user_information")
-                    .where({ email: changeUser.email })
-                    .select("id");
-
+                    .where({ email: changeUser.email, validated: true }).andWhere("id", "<>", id)
+                    .select("id").first();
+                console.log("já cadastrado", resultEmail);
                 //Verificando se o email pertence a outro usuário.
-                if (emailInUse(resultEmail)) {
+                if (!!resultEmail) {
                     errorMsg.errorEmail = "Email já cadastrado!";
                     errorMsg.error = true;
                 }
             }
 
-            //Verificando se o cpf está validado.
-            if (changeUser.cpf !== user[0].cpf && user[0].validated) {
 
-                errorMsg.errorCpf = "Impossível alterar CPF já validado!";
+            const resultCpf = await knex("user_information")
+                .where({ cpf: changeUser.cpf, validated: true }).andWhere("id", "<>", id)
+                .select("id")
+                .first();
+
+
+            if (!!resultCpf) {
+                errorMsg.errorCpf = "Cpf já foi validado por outro usuário!";
                 errorMsg.error = true;
-
-                //Permito alteração de cpf para usuários não validados.
-            } else if (!user[0].validated) {
-
-                /*
-                    Caso o cpf exista e já esteja validado não permito alteração.
-                    Logo, o sistema permitirá ter dois cpfs iguais desde que não estejam validados.
-                    Iremos validar um único usuário com determinado cpf
-                    e os demais que não estão validados com o mesmo cpf irão ter o campo do cpf
-                    setados para nulo!
-                */
-
-                const resultCpf = await knex("user_information")
-                    .where({ cpf: changeUser.cpf })
-                    .select("id", "validated");
-
-
-                if (cpfInUse(resultCpf)) {
-                    errorMsg.errorCpf = "Cpf já foi validado por outro usuário!";
-                    errorMsg.error = true;
-                }
-
-                if (!errorMsg.error) {
-
-                    await knex('user_information')
-                        .where({ id })
-                        .update({
-                            name: changeUser.name,
-                            cpf: changeUser.cpf
-                        });
-                }
             }
-            else if (!changePassword && !errorMsg.error) {
+
+            if (!errorMsg.error) {
 
                 await knex('user_information')
                     .where({ id })
                     .update({
-                        name: changeUser.name
+                        name: changeUser.name,
+                        cpf: changeUser.cpf,
+                        access_level: "U",
                     });
+
+                if (user[0].cpf.length === null && !!changeUser.cpf) {
+                    newToken = true;
+                }
             }
+
             if (changePassword && !errorMsg.error) {
                 bcrypt.genSalt(10, function (err, salt) {
                     bcrypt.hash(changeUser.newPassword, salt, async function (err, hash) {
@@ -239,7 +265,6 @@ module.exports = {
                             error.status = 400;
 
                             throw error;
-                            return;
                         }
 
                         await knex('user_information')
@@ -273,21 +298,41 @@ module.exports = {
                     error.status = 400;
 
                     throw error;
-                    return;
+
                 });
             }
 
-            if (!errorMsg.error) {
+            if (!errorMsg.error && newToken === false) {
                 res.status(204).json({
                     name: changeUser.name,
                     cpf: changeUser.cpf
                 });
+            } else if (!errorMsg.error && newToken === true) {
+
+                //Criamos o token.
+                const token = jwt.sign({
+                    id: !!user[0].id,
+                    email: !!user[0].email,
+                }, key, {
+                    expiresIn: "1h"
+                });
+
+                //Retornamos o mesmo.
+                return res.cookie("token", token, {
+                    secure: false, //Falso para http true para https
+                    httpOnly: true
+                })
+                    .status(204)
+                    .json({
+                        name: changeUser.name,
+                        cpf: changeUser.cpf
+                    });
+
             } else {
                 const error = new Error(JSON.stringify(errorMsg));
                 error.status = 200;
 
                 throw error;
-                return;
             }
 
         } catch (error) {
@@ -310,28 +355,9 @@ module.exports = {
                 email: user[0].email,
                 cpf: user[0].cpf,
                 validated: user[0].validated,
+                accessLevel: user[0].access_level,
+                loggedWith: !!user[0].password ? "google" : "api"
             });
-
-        } catch (error) {
-            next(error);
-        }
-    },
-    async getEvaluation(req, res, next) {
-
-        try {
-
-            // const user = await getUserFromToken(req);
-            const { evaluation_id } = req.query;
-
-            const evaluation = await knex("evaluation_information")
-                .where({ evaluation_id })
-                .first();
-
-            if (!evaluation) {
-                throw new Error("Violação nas validações");
-            }
-            console.log(evaluation);
-            res.status(200).json(evaluation);
 
         } catch (error) {
             next(error);
@@ -343,17 +369,16 @@ module.exports = {
         try {
             const { email } = req.body;
 
-
             const user = await knex("user_information")
                 .where({ email })
-                .select("name", "email", "validated_email", "access_level");
+                .select("name", "email", "validated", "access_level").first();
 
             const token = jwt.sign({ email }
                 , emailKey, {
-                expiresIn: user[0].access_level === "U" ? "30m" : "6h"
+                expiresIn: user.access_level === "U" ? "30m" : "6h"
             });
 
-            if (user[0].validated_email) {
+            if (user.validated) {
 
                 const error = new Error(JSON.stringify({
                     error: true,
@@ -363,17 +388,16 @@ module.exports = {
                 error.status = 400;
 
                 throw error;
-                return;
             }
 
             mailer.sendMail({
                 from: environment.email.auth.user, // sender address
-                to: user[0].email, // list of receivers
+                to: user.email, // list of receivers
                 subject: "Ativar conta", // Subject line
                 template: "validateAccount", // Subject line
                 context: {
-                    time: user[0].access_level === "U" ? "30 minutos" : "6 horas",
-                    name: user[0].name,
+                    time: user.access_level === "U" ? "30 minutos" : "6 horas",
+                    name: user.name,
                     link: `${environment.ipAdress}/activateAccount/${token}`
                 }
             }, errorMessage => {
@@ -381,7 +405,6 @@ module.exports = {
                 error.status = 400;
 
                 throw error;
-                return;
             });
 
             res.status(200).end();
@@ -392,81 +415,12 @@ module.exports = {
 
     },
 
-    async createEvaluation(req, res, next) {
-        try {
-            const { title, evaluation } = req.body;
-            const user = await getUserFromToken(req);
-
-            if (!titleIsValid(title) || !evaluationIsValid(evaluation)) {
-                throw new Error("Violação nas validações");
-            }
-
-            await knex("evaluation_information")
-                .insert({
-                    id: user[0].id,
-                    title,
-                    evaluation
-                })
-
-            res.status(201).end();
-
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    async getEvaluations(req, res, next) {
-        try {
-
-            const { filters = null, page = 0, pageSize } = req.query;
-
-            const { token } = req.cookies;
-
-            let query = knex("evaluation_information")
-                .leftJoin("user_information", "user_information.id", "evaluation_information.id")
-
-            if (filters !== null) {
-
-                //Aplicando os filtros.
-                filters.forEach((elementJson) => {
-                    const element = JSON.parse(elementJson);
-                    //Caso seja uma string usaremos o ilike!
-                    if (element.field === "title" ||
-                        element.field === "cpf" ||
-                        element.field === "email") {
-
-                        query.andWhere(element.field, "like", `%${element.value}%`);
-
-                    } else if (element.field === "viewed" && element.value.length !== 2) {
-                        if (element.value.length === 1) {
-                            query.andWhere(element.field, element.value[0]);
-                        }
-                    }
-                });
-            }
-
-            let model = query;
-            const users = await model
-                .clone()
-                .orderBy("id")
-                .limit(pageSize)
-                .offset(page * pageSize)
-                .select(
-                    "user_information.id", "evaluation_id",
-                    "cpf", "email",
-                    "access_level", "validated_email",
-                    "viewed", "title");
-
-            const totalCount = await model.clone().count();
-
-            res.status(200).send({ users, totalCount: totalCount[0]["count(*)"] });
-
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    logged(req, res, next) {
-        res.status(200).json({ accessLevel: res.locals.accessLevel });
+    isLogged(req, res, next) {
+        res.status(200).json({
+            email: res.locals.user.email,
+            cpf: res.locals.user.cpf,
+            accessLevel: res.locals.user.accessLevel,
+            loggedWith: res.locals.user.loggedWith
+        });
     }
 }

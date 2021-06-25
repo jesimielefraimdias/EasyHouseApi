@@ -1,12 +1,14 @@
+
+const mime = require('mime-types');
 const knex = require("../../database");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const mailer = require("../../services/mailer");
 const { environment } = require("../../config/environment");
 const { emailKey } = require("../../config/jwb.json");
 const path = require("path");
 const fs = require("fs");
-const { getUserFromToken } = require("../helpers/userToken");
 const { google } = require("googleapis");
 const credentials = require("../../config/googleCredentials.json");
 const scopes = [
@@ -35,6 +37,7 @@ const {
     cpfInUse,
     emailInUse
 } = require("../helpers/userValidation");
+const { getUserFromToken } = require("../helpers/userToken");
 
 //CTR + K + 2
 module.exports = {
@@ -42,6 +45,7 @@ module.exports = {
     async create(req, res, next) {
 
         try {
+            // console.log(req.body.nickname);
             const {
                 nickname, //255
                 address, //255
@@ -55,94 +59,65 @@ module.exports = {
                 rentAmount, //isValueValid
                 propertyValue, //isValueValid
                 cep, //cepIsValid
+                lat,
+                lng
             } = req.body;
-            console.log(req.body);
+            // console.log(req.body);
             //Verificando se os dados são validos.
-            if (
-                !isStringValid255(nickname) ||
-                !isStringValid255(address) ||
-                !isStringValid255(complement) ||
-                !isStringValid255(district) ||
-                !isStringValid500(description) ||
-                !isQuantityValid(number) ||
-                !isQuantityValid(room) ||
-                !isQuantityValid(restroom) ||
-                !isContractValid(contract) ||
-                !isValueValid(rentAmount) ||
-                !isValueValid(propertyValue) ||
-                !await cepIsValid(cep)
-            ) {
-                const error = new Error("Violação nas validações");
-                error.status = 400;
+            // console.log(req.files);
+            // if (
+            //     !(!!req.files && req.files.length > 0) ||
+            //     !isStringValid255(nickname) ||
+            //     !isStringValid255(address) ||
+            //     !isStringValid255(complement) ||
+            //     !isStringValid255(district) ||
+            //     !isStringValid500(description) ||
+            //     !isQuantityValid(number) ||
+            //     !isQuantityValid(room) ||
+            //     !isQuantityValid(restroom) ||
+            //     !isContractValid(contract) ||
+            //     !isValueValid(rentAmount) ||
+            //     !isValueValid(propertyValue) ||
+            //     !await cepIsValid(cep)
+            // ) {
+            //     console.log(!isStringValid255(nickname),
+            //         !isStringValid255(address),
+            //         !isStringValid255(complement),
+            //         !isStringValid255(district),
+            //         !isStringValid500(description),
+            //         !isQuantityValid(number),
+            //         !isQuantityValid(room),
+            //         !isQuantityValid(restroom),
+            //         !isContractValid(contract),
+            //         !isValueValid(rentAmount),
+            //         !isValueValid(propertyValue),
+            //         !await cepIsValid(cep))
+            //     const error = new Error("Violação nas validações");
+            //     error.status = 400;
 
-                throw error;
-            }
+            //     throw error;
+            // }
 
-
-            const user = await getUserFromToken(req);
-            console.log(user[0].id);
-            await knex("property").insert({
-                user_id: user[0].id,
-                nickname, //255
-                address, //255
-                complement, //255
-                district, //255
-                description, //500
-                number, //QuantityValid -- 
-                room, //QuantityValid --
-                restroom, //QuantityValid --
-                contract, //isContractValid
-                rent_amount: rentAmount * 100, //isValueValid
-                property_value: propertyValue * 100, //isValueValid
-                cep, //cepIsValid
+            // console.log("aqui", nickname, res.locals.user.folder);
+            const resFolder = await drive.files.create({
+                resource: {
+                    name: nickname,
+                    parents: [res.locals.user.folder],
+                    mimeType: "application/vnd.google-apps.folder"
+                },
+                fields: 'id',
             });
-
-
-            console.log("passou");
-            return res.status(201).send();
-
-        } catch (error) {
-            next(error);
-        }
-    },
-
-    async listFiles(req, res, next) {
-        drive.files.list({
-            q: "mimeType = 'application/vnd.google-apps.folder'"
-        }, (err, res) => {
-            if (err) throw err;
-            const files = res.data.files;
-            if (files.length) {
-                files.map((file) => {
-                    console.log(file);
-                });
-            } else {
-                console.log('No files found');
-            }
-
-        });
-
-        res.status(200).end();
-    },
-
-    async test(req, res, next) {
-        try {
-
-            const resList = await drive.files.list({
-                q: "mimeType = 'application/vnd.google-apps.folder'"
-            });
-            const foldersIds = resListe .data.files.map(element => element.id);
-            // console.log(resList.data);
+            console.log(resFolder.data, resFolder.status)
 
             await req.files.forEach(async (element, index) => {
-
+                console.log(element);
                 const resCreate = await drive.files.create({
                     resource: {
-                        name: element.filename,
-                        parents: foldersIds
+                        name: element.originalname,
+                        parents: [resFolder.data.id]
                     },
                     media: {
-                        mimeType: "application/pdf",
+                        mimeType: element.mimeType,
                         body: fs.createReadStream(path.resolve(element.path))
                     },
                     fields: 'id',
@@ -154,10 +129,127 @@ module.exports = {
                 console.log(resCreate.status);
             });
 
+            const [id] = await knex("property")
+                .returning("id")
+                .insert({
+                    user_id: res.locals.user.id,
+                    folder: resFolder.data.id,
+                    nickname, //255
+                    address, //255
+                    complement, //255
+                    district, //255
+                    description, //500
+                    number, //QuantityValid -- 
+                    room, //QuantityValid --
+                    restroom, //QuantityValid --
+                    contract, //isContractValid
+                    rent_amount: rentAmount * 100, //isValueValid
+                    property_value: propertyValue * 100, //isValueValid
+                    cep, //cepIsValid
+                    lat,
+                    lng
+                });
 
-            res.status(201).end();
+            return res.status(201).send();
+
         } catch (error) {
             next(error);
+        }
+    },
+    async list(req, res, next) {
+        const user = await getUserFromToken(req);
+        console.log(user);
+        const data = await knex("property").where({ user_id: user[0].id });
+
+        res.status(200).json(data);
+    },
+    async listByUser(req, res, next) {
+        const { user_id } = req.params;
+
+        const data = await knex("property").where({ user_id });
+
+        res.status(200).json(data);
+    },
+    async listAll(req, res, next) {
+        const data = await knex("property");
+
+        res.status(200).json(data);
+    },
+    async getProperty(req, res, next) {
+        try {
+            const { id } = req.params;
+            //folder = hash
+            if (!!id === false) {
+                const error = new Error("Property not found");
+                error.status = 400;
+                throw error;
+            }
+
+            const property = await knex("property").where({ id }).first();
+
+            const resFiles = await drive.files.list({
+                q: `mimeType != 'application/vnd.google-apps.folder' and '${property.folder}' in parents`
+            });
+            res.status(200).json({ property, files: resFiles.data.files });
+
+        } catch (e) {
+            next(e);
+        }
+    },
+
+    async download(req, res, next) {
+        try {
+            const { file = null } = req.params;
+
+            if (!!file === false) {
+                const error = new Error("File not found");
+                error.status = 400;
+
+                throw error;
+            }
+
+            const resDrive = await drive.files.get(
+                {
+                    fileId: file,
+                    alt: "media"
+                }, {
+                responseType: "stream"
+            }
+            );
+
+            const hash = crypto.randomBytes(8);
+            const date = Date.now();
+            // const ext = resFiles.data.files[0].name.split(".")[1];
+            const ext = mime.extension(resDrive.headers["content-type"]);
+            const fileName = `${hash.toString("hex")}_${date}.${ext}`;
+            // const fileId = resFiles.data.files[0].id;
+            // const realName = resFiles.data.files[0].name;
+            const tempFile = path.resolve(__dirname, "..", "..", "..", "uploads", "temp", `${fileName}`);
+            console.log(tempFile);
+            console.log(resDrive.headers["content-type"]);
+
+            // return res.status(200).end();
+
+            const dest = fs.createWriteStream(tempFile);
+            resDrive.data.pipe(dest);
+            console.log(fileName);
+            dest.on("finish", _ => {
+
+                res.download(tempFile, tempFile, err => {
+                    if (err) {
+                        console.log(err);
+                    }
+
+                    if (fs.existsSync(tempFile)) {
+                        fs.unlinkSync(tempFile)
+                    }
+                }
+                );
+
+            });
+            console.log("teste");
+        } catch (e) {
+            next(e);
         }
     },
 
@@ -378,7 +470,7 @@ module.exports = {
 
             const user = await knex("user_information")
                 .where({ email })
-                .select("name", "email", "validated_email", "access_level");
+                .select("name", "email", "validated", "access_level");
 
             const token = jwt.sign({ email }
                 , emailKey, {

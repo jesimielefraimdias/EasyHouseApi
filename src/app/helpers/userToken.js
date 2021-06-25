@@ -10,22 +10,20 @@ exports.getUserFromToken = async (req) => {
 
     const { authorization = null } = req.headers;
 
+    let token = authorization;
 
-
-    let token = authorization, user;
-
-    if (token === null || token === undefined) {
+    if (!!token === false) {
         token = req.cookies.token;
     }
 
-    if (token === null || token === undefined) {
+    if (!!token === false) {
         return [];
     }
 
 
     const { id } = jwt.verify(token, key);
 
-    user = await knex("user_information")
+    const user = await knex("user_information")
         .where({ id });
 
     return user;
@@ -34,11 +32,11 @@ exports.getUserFromToken = async (req) => {
 
 exports.getUserFromTokenIdGoogle = async (object) => {
 
-    console.log(object.qc.id_token);
+//    console.log(object.tokenObj.id_token);
     try {
 
         const ticket = await client.verifyIdToken({
-            idToken: object.qc.id_token,
+            idToken: object.tokenObj.id_token,
             audience: clientId
         });
 

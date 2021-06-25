@@ -6,46 +6,54 @@ const { getUserFromToken } = require("../helpers/userToken");
 module.exports = {
 
     async userAccessLevel(req, res, next) {
-
-        try {
-
-            const user = await getUserFromToken(req);
-
-            if (user.length === 0 || user[0].removed || !user[0].validated_email) {
-                const error = new Error("Violação nas validações");
-                error.status = 401;
-
-                throw error;
-            }
-
-            next();
-            // console.log("TUDO CERTO");
-        } catch (error) {
-            // console.log(error);
-            next(error);
-        }
-    },
-
-    async operatorAccessLevel(req, res, next) {
-
         try {
             const { token } = req.cookies;
-            const { email } = jwt.verify(token, key);
+            const { id, email } = jwt.verify(token, process.env.KEY);
 
             const user = await knex("user_information")
-                .where({ email })
-                .select("removed", "access_level", "validated", "validated_email");
+                .where({ id })
+                .select("removed", "cpf", "access_level", "validated", "folder", "password")
+                .first();
 
-            if (user[0].removed || !user[0].validated || !user[0].validated_email ||
-                user[0].access_level !== "O" && user[0].access_level !== "A") {
-                const error = new Error("Violação nas validações");
+            console.log(
+                user.removed == true, // 0
+                !user.validated,
+                user.access_level === "I",
+                req.originalUrl !== "/isLoggedUserLevel",
+                req.originalUrl !== "/getUser"
+            );
+            console.log(
+                user.removed, // 0
+                user.validated,
+                user.access_level,
+                req.originalUrl,
+            );
+
+            if (
+                user.removed ||
+                !user.validated ||
+                user.access_level === "I" &&
+                req.originalUrl !== "/isLoggedUserLevel" &&
+                req.originalUrl !== "/getUser" &&
+                req.originalUrl !== "/updateProfile"
+            ) {
+                console.log("entrou no catch");
+                const error = new Error("Violação11 nas validações");
                 error.status = 401;
 
                 throw error;
-                return;
             }
 
+            res.locals.user = {
+                email,
+                cpf: user.cpf,
+                id,
+                accessLevel: user.access_level, folder: user.folder,
+                loggedWith: !!user.password ? "api" : "google"
+            };
+
             next();
+
         } catch (error) {
             next(error);
         }
@@ -55,21 +63,22 @@ module.exports = {
 
         try {
             const { token } = req.cookies;
-
-            const { email } = jwt.verify(token, key);
-
+            const { id, email } = jwt.verify(token, process.env.KEY);
+            console.log(id);
             const user = await knex("user_information")
-                .where({ email })
-                .select("removed", "access_level", "validated", "validated_email");
+                .where({ id })
+                .select("removed", "cpf", "access_level", "validated", "folder", "password")
+                .first();
 
-            if (user[0].removed || !user[0].validated || !user[0].validated_email
-                || user[0].access_level !== "A") {
+
+            if (user.removed || !user.validated || user.access_level !== 'A') {
                 const error = new Error("Violação nas validações");
                 error.status = 401;
 
                 throw error;
-                return;
             }
+
+            res.locals.user = { email, id, accessLevel: user.access_level, folder: user.folder }
 
             next();
 
@@ -77,33 +86,4 @@ module.exports = {
             next(error);
         }
     },
-
-    async accessLevel(req, res, next) {
-
-        try {
-            const { token } = req.cookies;
-
-            const { email } = jwt.verify(token, key);
-
-            const user = await knex("user_information")
-                .where({ email })
-                .select("removed", "access_level", "validated", "validated_email");
-
-            if (user[0].removed || !user[0].validated_email) {
-                const error = new Error("Violação nas validações");
-                error.status = 401;
-
-                throw error;
-                return;
-            }
-
-            res.locals.accessLevel = user[0].access_level;
-            res.locals.ac = user[0].access_level;
-
-            next();
-
-        } catch (error) {
-            next(error);
-        }
-    }
 }

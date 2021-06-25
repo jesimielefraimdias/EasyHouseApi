@@ -1,9 +1,7 @@
-const formData = require("express-form-data");
 const express = require("express");
 const cors = require('cors');
 const cookieParser = require("cookie-parser");
-
-const multer = require("multer");
+require('dotenv').config();
 const app = express();
 const routes = require("./routes");
 

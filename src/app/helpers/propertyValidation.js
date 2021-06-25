@@ -60,7 +60,7 @@ exports.isQuantityValid = value => {
 }
 
 exports.isValueValid = value => {
-    if (typeof value === "number" && value > 0) {
+    if (typeof parseFloat(value) === "number" && value > 0) {
         return true;
     }
     console.log("teste7");

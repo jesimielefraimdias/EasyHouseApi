@@ -1,3 +1,7 @@
 # node.js
 #
 node_modules/
+uploads/temp/
+src/app/config/googleCredentials.json
+src/app/config/mail.json
+src/app/config/oauth2.json
